@@ -3,7 +3,7 @@ import os
 import time
 import random
 from datetime import datetime
-from anthropic import Anthropic
+from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -54,7 +54,7 @@ html, body, [class*="css"] {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
     background: radial-gradient(ellipse at 20% 50%, rgba(100, 220, 255, 0.04) 0%, transparent 60%),
-                radial-gradient(ellipse at 80% 20%, rgba(168, 85, 247, 0.06) 0%, transparent 60%);
+                radial-gradient(ellipse at 80% 20%, rgba(16, 163, 127, 0.06) 0%, transparent 60%);
     pointer-events: none;
 }
 .kasparro-header-inner { position: relative; z-index: 1; }
@@ -242,7 +242,7 @@ html, body, [class*="css"] {
 
 /* ── Agent Intervention Card ── */
 .agent-card {
-    background: linear-gradient(135deg, rgba(100, 220, 255, 0.04), rgba(168, 85, 247, 0.04));
+    background: linear-gradient(135deg, rgba(100, 220, 255, 0.04), rgba(16, 163, 127, 0.04));
     border: 1px solid rgba(100, 220, 255, 0.15);
     border-radius: 12px;
     padding: 20px;
@@ -255,7 +255,7 @@ html, body, [class*="css"] {
     position: absolute;
     top: -1px; left: 0; right: 0;
     height: 2px;
-    background: linear-gradient(90deg, #64DCFF, #A855F7, #64DCFF);
+    background: linear-gradient(90deg, #64DCFF, #10A37F, #64DCFF);
     background-size: 200% 100%;
     animation: shimmer 2s linear infinite;
 }
@@ -509,7 +509,7 @@ def init_state():
         "discount_applied": 0,
         "recoveries_this_session": 0,
         "friction_count": 0,
-        "anthropic_key": "",
+        "openai_key": "",
         "agent_thinking": False,
     }
     for k, v in defaults.items():
@@ -528,14 +528,14 @@ def log(msg, level="INFO"):
     if len(st.session_state.logs) > 60:
         st.session_state.logs = st.session_state.logs[:60]
 
-def call_claude(friction_type, behavior_details):
-    api_key = os.getenv("ANTHROPIC_API_KEY") or st.session_state.get("anthropic_key", "")
+def call_openai(friction_type, behavior_details):
+    api_key = os.getenv("OPENAI_API_KEY") or st.session_state.get("openai_key", "")
     if not api_key:
         log("No API key found — routing to deterministic fallback engine.", "WARN")
         return fallback(friction_type), "fallback"
     
     try:
-        client = Anthropic(api_key=api_key)
+        client = OpenAI(api_key=api_key)
         discount = 10 if friction_type == "Price Hesitation" else 0
         shipping_msg = "We'll waive the shipping fee." if friction_type == "Shipping Friction" else ""
 
@@ -551,16 +551,17 @@ Offer Available: {"10% discount code SAVE10" if discount else "Free shipping cod
 
 Write only the message to the buyer. No preamble, no labels."""
 
-        log("Dispatching context payload to Claude claude-sonnet-4-20250514.", "INFO")
-        message = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+        log("Dispatching context payload to OpenAI gpt-4o-mini.", "INFO")
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
             max_tokens=160,
-            messages=[{"role": "user", "content": prompt}]
+            temperature=0.7
         )
         log("LLM generation successful — intervention compiled.", "SUCCESS")
-        return message.content[0].text.strip(), "llm"
+        return response.choices[0].message.content.strip(), "llm"
     except Exception as e:
-        log(f"Claude API error: {str(e)[:60]}. Engaging fallback.", "ERROR")
+        log(f"OpenAI API error: {str(e)[:60]}. Engaging fallback.", "ERROR")
         return fallback(friction_type), "fallback"
 
 def fallback(friction_type):
@@ -602,8 +603,8 @@ st.markdown("""
     </div>
     <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
       <div class="status-pill"><div class="status-dot"></div> AGENT ONLINE</div>
-      <div class="status-pill" style="color:#A855F7; border-color:rgba(168,85,247,0.3); background:rgba(168,85,247,0.06);">
-        ⚡ Powered by Claude
+      <div class="status-pill" style="color:#10A37F; border-color:rgba(16,163,127,0.3); background:rgba(16,163,127,0.06);">
+        ⚡ Powered by OpenAI
       </div>
     </div>
   </div>
@@ -720,7 +721,7 @@ with left:
         st.markdown("""
         <div class="recovered-badge" style="background:linear-gradient(135deg, rgba(16,185,129,0.08), rgba(100,220,255,0.04)); border-color:rgba(16,185,129,0.3);">
           <div class="recovered-badge-title">🎉 Order Placed Successfully!</div>
-          <div class="recovered-badge-sub">Confirmation sent · Order ID #KSP-20260519</div>
+          <div class="recovered-badge-sub">Confirmation sent · Order ID #KSP-20260520</div>
         </div>
         """, unsafe_allow_html=True)
         if st.button("↩ Reset Simulation", use_container_width=True):
@@ -758,9 +759,9 @@ with left:
                     st.session_state.friction_detected = ftype
                     st.session_state.friction_count += 1
                     log(f"Friction captured: {ftype} — analysing behavioural signals.", "WARN")
-                    log("Routing to Claude Sonnet for contextual intervention generation.", "INFO")
+                    log("Routing to OpenAI for contextual intervention generation.", "INFO")
                     with st.spinner("Agent generating intervention…"):
-                        result, source = call_claude(ftype, detail)
+                        result, source = call_openai(ftype, detail)
                     st.session_state.agent_offer = result
                     log(f"Intervention source: {'LLM' if source == 'llm' else 'Fallback Rules Engine'}.", "INFO")
                     st.rerun()
@@ -795,11 +796,11 @@ with right:
 
     # ── API Key ──
     api_key_input = st.text_input(
-        "Anthropic API Key",
-        placeholder="sk-ant-… (optional — uses fallback if blank)",
+        "OpenAI API Key",
+        placeholder="sk-proj-… (optional — uses fallback if blank)",
         type="password",
-        key="anthropic_key",
-        help="Provide your Anthropic API key to use Claude claude-sonnet-4-20250514. Falls back to a deterministic rules engine automatically."
+        key="openai_key",
+        help="Provide your OpenAI API key to use ChatGPT. Falls back to a deterministic rules engine automatically."
     )
 
     st.markdown('<hr>', unsafe_allow_html=True)
